@@ -649,6 +649,7 @@ def question_judge() -> str:
 
 
 def _qwen_judge_func(judge_func: str):
+    """Resolve the supported inference backend and reject unknown judge names."""
     if judge_func != "qwen":
         raise ValueError("Only judge_func='qwen' is supported in the official repo.")
     return model_infer_qwen
@@ -803,12 +804,16 @@ def _is_compound_question(qs: str) -> bool:
 
 
 def self_judge(qs: str, ans: str, image, Dict_config_m: Dict, constraints: List=[], judge_func: str='qwen'):
-    # load prompt
+    """Validate image-grounded questions before scoring their difficulty.
+
+    Return (accepted, diagnostics). Hard-constraint failures stop further model
+    calls; successful diagnostics retain hard, perception, reasoning, and
+    constraint-following evaluations for downstream scoring.
+    """
+    # Build separate prompts for validity, difficulty, and constraint compliance.
     hard_cons = hard_constraints()
     soft_cons_mode = soft_constraints_follow()
-    # simp_prompt = simplify_prompt()
     soft_cons_extracted = soft_constraints_extracted()
-    soft_entity_cnt = prompt_build_soft_constraints_json()
     reasoning_all = prompt_reasoning_steps_and_count()
     model_infer_func = _qwen_judge_func(judge_func)
 
@@ -821,9 +826,20 @@ def self_judge(qs: str, ans: str, image, Dict_config_m: Dict, constraints: List=
     if _is_compound_question(qs):
         return False, {}
 
-    # return if question is successfully evolved or not
-    if_valid = True
-    dict_res = dict()
+    # Check the original question against the image before spending inference
+    # on difficulty scores: difficulty cannot rescue an invalid question.
+    Dict_inputs = {'prompt': hard_cons + f"Question: {qs}", 'image': image}
+    hard_eval, _ = model_infer_func(
+        dict_input=Dict_inputs, dict_config_m=Dict_config_m, max_len=1024,
+    )
+    if not isinstance(hard_eval, dict):
+        return False, {}
+    dict_res = {
+        'evaluation': [hard_eval],
+        'question_info': {'constraint': constraints},
+    }
+    if not is_valid_hard_constraints(hard_eval):
+        return False, dict_res
 
     Dict_inputs = {'prompt': 'Extract ALL noun or noun-phrase entities mentioned in Q, whether abstract or concrete and saved as text entity. ' + f"Question: {qs}", }
     text_entity, _ = model_infer_func(dict_input=Dict_inputs, dict_config_m=Dict_config_m, max_len=512)
@@ -836,6 +852,7 @@ def self_judge(qs: str, ans: str, image, Dict_config_m: Dict, constraints: List=
     image_data = soft_simp_eval.get('soft_constraints', {}).get('perception_difficulty', {}).get('image', {})
     easy_count = image_data.get('easy_count', 0)
     hard_count = image_data.get('hard_count', 0)
+    # Hard-to-ground entities contribute twice the weight of easy entities.
     count = (hard_count * 2) + (easy_count * 1)
     image_data['count'] = count
     
@@ -843,8 +860,6 @@ def self_judge(qs: str, ans: str, image, Dict_config_m: Dict, constraints: List=
     soft_reason_eval, _ = model_infer_func(dict_input=Dict_inputs, dict_config_m=Dict_config_m, max_len=1024)
     if not isinstance(soft_reason_eval, dict):
         return False, dict_res
-    # end_time = time.time()
-    # print("filtering", end_time - start_time)
 
     if constraints is not None and len([item for item in constraints if item]) > 0:
         cons_str = ", ".join([str(item) for item in constraints if str(item).strip()])
@@ -856,7 +871,7 @@ def self_judge(qs: str, ans: str, image, Dict_config_m: Dict, constraints: List=
         soft_mode_eval = {}
 
     dict_res = {
-        'evaluation': [soft_simp_eval, soft_reason_eval, soft_mode_eval],
+        'evaluation': [hard_eval, soft_simp_eval, soft_reason_eval, soft_mode_eval],
         'question_info': {'constraint': constraints},
     }
     
@@ -925,7 +940,19 @@ def self_judge_ori(qs: str, ans: str, image, Dict_config_m: Dict, constraints: L
 
 
 def is_valid_hard_constraints(res: dict) -> bool:
+    """Require zero factual/ambiguity errors and explicit answerability.
+
+    Missing or malformed judge sections fail closed instead of accepting a
+    question or interrupting generation with an attribute error.
+    """
+    if not isinstance(res, dict):
+        return False
     hard = res.get("hard_constraints", {})
+    if not isinstance(hard, dict):
+        return False
+    if any(not isinstance(hard.get(key), dict)
+           for key in ("Factuality", "Ambiguity", "Validity")):
+        return False
 
     factuality_ok = hard.get("Factuality", {}).get("count", None) == 0
     ambiguity_ok  = hard.get("Ambiguity", {}).get("count", None) == 0
@@ -970,10 +997,12 @@ def has_difficulty_improved(seed_met: dict, rew_met: dict) -> bool:
 
 
 def _extract_nonempty_constraints(constraints: List) -> List[str]:
+    """Strip constraint text and discard blank entries before matching judgments."""
     return [str(item).strip() for item in (constraints or []) if str(item).strip()]
 
 
 def _get_model_following_entries(dict_res: dict) -> List[dict]:
+    """Merge judge blocks and normalize their per-constraint compliance entries."""
     api = _merge_api_res_from_evaluation(dict_res.get("evaluation", []))
     soft = api.get("soft_constraints", {}) or {}
     mfc = soft.get("model_following_capability", {}) or {}
@@ -981,6 +1010,7 @@ def _get_model_following_entries(dict_res: dict) -> List[dict]:
 
 
 def extract_model_following_ratio(dict_res: dict) -> float:
+    """Return the compliance fraction for named constraints, or zero if absent."""
     entries = [
         item for item in _get_model_following_entries(dict_res)
         if str(item.get("constraint_text", "")).strip()
@@ -991,6 +1021,7 @@ def extract_model_following_ratio(dict_res: dict) -> float:
 
 
 def has_required_model_following(dict_res: dict, constraints: List) -> bool:
+    """Require compliance with the latest nonblank constraint; no constraints pass."""
     required = _extract_nonempty_constraints(constraints)
     if not required:
         return True
@@ -1008,6 +1039,7 @@ def has_required_model_following(dict_res: dict, constraints: List) -> bool:
 
 
 def preserves_reasoning_structure(original_q: str, simplified_q: str, content: Optional[dict] = None) -> Tuple[bool, Dict[str, object]]:
+    """Check that simplification preserves question form and reasoning anchors."""
     content = content or {}
     original = (original_q or "").strip()
     simplified = (simplified_q or "").strip()

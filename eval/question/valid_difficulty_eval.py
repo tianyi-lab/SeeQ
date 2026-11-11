@@ -371,6 +371,7 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 
 def score_judge(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Clamp dimension scores to 0-5 and normalize their mean; this scorer does not gate validity."""
     raw = raw if isinstance(raw, dict) else {}
     scored = dict(raw)
     dimensions = {key: _clamp(_as_float(raw.get(key), 0.0), 0.0, 5.0) for key in DIMENSION_KEYS}
@@ -387,6 +388,7 @@ def score_judge(raw: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def parse_batch_results(records: list[dict[str, Any]], raw_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Join batch replies by question ID, retaining missing replies and skipping missing images."""
     by_id: dict[str, Any] = {}
     for line in raw_results:
         custom_id = line.get("custom_id")

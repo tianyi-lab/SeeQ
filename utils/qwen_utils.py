@@ -198,6 +198,7 @@ def load_model_path_qwen(modeltype):
 
 
 def _decode_generated_content(generated_ids, inputs, processor):
+    """Remove input prompt tokens before decoding each generated continuation."""
     output_ids = [out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
     return processor.batch_decode(output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
@@ -215,6 +216,7 @@ def model_infer(
     output_hidden_states: bool = False,
     **kwargs,
 ):
+    """Run Transformers or vLLM inference and return parsed content plus metadata."""
     try:
         model = dict_config_m["model"]
         processor = dict_config_m["processor"]
@@ -285,6 +287,7 @@ def model_infer_qwen(
     top_p: float = 0.8,
     top_k=20,
 ):
+    """Expose inference as the (content, thinking) tuple expected by generation and judging."""
     output = model_infer(
         dict_input=dict_input,
         dict_config_m=dict_config_m,

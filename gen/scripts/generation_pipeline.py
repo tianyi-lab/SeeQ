@@ -110,6 +110,11 @@ def gen_and_judge(
     dict_ans: Dict,
     selfjudge_fn,
 ):
+    """Try up to four generations, simplifying and answering each before judging.
+
+    Cache accepted metrics by original question and answers by simplified question;
+    return (None, None) when no candidate passes.
+    """
     max_retry = 3
     retry_idx = 0
     while retry_idx <= max_retry:
@@ -374,6 +379,7 @@ FILTER_CRITERIA_CHOICES = (
 
 
 def _has_image_perception_improved(seed_met: dict, rew_met: dict, min_delta: float = 1.0) -> bool:
+    """Compare visual grounding scores against the requested minimum increase."""
     seed_scores = rag_utils.extract_difficulty_scores(seed_met)
     rew_scores = rag_utils.extract_difficulty_scores(rew_met)
     perception_delta = (
@@ -384,6 +390,7 @@ def _has_image_perception_improved(seed_met: dict, rew_met: dict, min_delta: flo
 
 
 def _build_improvement_fn(filter_criteria: str) -> Callable[[dict, dict], bool]:
+    """Select the visual-only or combined difficulty gate for rewritten questions."""
     if filter_criteria == FILTER_CRITERIA_IMAGE_PERCEPTION_ONLY:
         return _has_image_perception_improved
     return lambda sm, rm: selfjudge_utils.has_difficulty_improved(seed_met=sm, rew_met=rm)

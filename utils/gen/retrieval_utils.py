@@ -135,12 +135,14 @@ def _tokenize(text: str) -> List[str]:
 
 
 def normalize_question(text: str) -> str:
+    """Normalize case and whitespace for sample-bank deduplication."""
     if not isinstance(text, str):
         return ""
     return " ".join(text.strip().lower().split())
 
 
 def lexical_overlap_ratio(text_a: str, text_b: str) -> float:
+    """Compute Jaccard overlap over distinct tokens longer than two characters."""
     toks_a = {tok for tok in _tokenize(text_a) if len(tok) > 2}
     toks_b = {tok for tok in _tokenize(text_b) if len(tok) > 2}
     if not toks_a or not toks_b:
@@ -376,6 +378,7 @@ def curate_sample_bank(bank: List[dict]) -> List[dict]:
 
 
 def score_bank_entry(entry: dict, seed_question: str = "") -> float:
+    """Weight difficulty, compliance, and specificity, penalizing overlap with the seed."""
     question = entry.get("question", "")
     scores = {
         "reasoning": float(entry.get("reasoning_difficulty", 0.0)),

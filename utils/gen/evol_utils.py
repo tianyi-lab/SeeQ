@@ -201,8 +201,7 @@ def generate_instructions_v2(image, seed_question: str, seed_answer: str, list_t
 
 
 def load_task_info():
-
-    # load task
+    """Load task definitions and return their lookup, ordered names, and prompt text."""
     task_path = os.path.join(ROOT_FOLDER, "config", "task_definition.json")
     with open(task_path, 'r') as f:
         list_task_ori = json.load(f)
@@ -213,6 +212,7 @@ def load_task_info():
 
 
 def load_seed_data(postfix: str, input_data, ):
+    """Normalize dataset-specific image and seed-question fields; skip multi-image SAT items."""
     list_data = []
 
     if postfix == 'cvb':

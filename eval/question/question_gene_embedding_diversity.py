@@ -13,6 +13,7 @@ import numpy as np
 
 
 def iter_questions(item: dict) -> list[str]:
+    """Flatten generation groups into nonempty question strings, preserving order."""
     questions: list[str] = []
     for group in item.get("generations") or []:
         if isinstance(group, dict):
@@ -27,6 +28,7 @@ def iter_questions(item: dict) -> list[str]:
 
 
 def cosine_distance_summary(embeddings: np.ndarray) -> dict[str, float]:
+    """Summarize distinct embedding pairs; fewer than two items have zero diversity."""
     if len(embeddings) < 2:
         return {
             "mean_pairwise_cosine_distance": 0.0,

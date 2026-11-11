@@ -29,6 +29,7 @@ def _is_empty_file(p: Path) -> bool:
 
 
 def make_json_safe(obj):
+    """Recursively convert sets to lists while preserving nested container contents."""
     if isinstance(obj, set):
         return list(obj)
     if isinstance(obj, dict):
@@ -47,6 +48,7 @@ def write_to_file(
     print_log: bool = True,
     modeltype: str | None = None,
 ):
+    """Write results as JSON, creating the destination directory if needed."""
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     save_name = _resolve_save_name(save_name=save_name, modeltype=modeltype)
@@ -65,6 +67,7 @@ def load_exist_file(
     print_log: bool = True,
     modeltype: str | None = None,
 ):
+    """Read saved JSON results, returning None when the file does not exist."""
     save_dir = Path(save_dir)
     save_name = _resolve_save_name(save_name=save_name, modeltype=modeltype)
     load_file = save_dir / f"{save_name}.json"
@@ -151,6 +154,7 @@ def _normalize_text(s: str) -> str:
 
 
 def unify_ans(answer: str, options=None) -> str:
+    """Extract an a-f option label, falling back to normalized or fuzzy option text."""
     if not isinstance(answer, str):
         return ""
 
@@ -205,6 +209,7 @@ def unify_ans(answer: str, options=None) -> str:
 
 
 def postprocess_output(output: str):
+    """Parse fenced JSON or Python literals, retaining text when parsing fails."""
     try:
         output = (
             output.split("```json")[-1]
